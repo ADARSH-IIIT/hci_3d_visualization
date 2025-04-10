@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Viewer with Upload</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #fff;
+        }
+        
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 10;
+        }
+        
+        .btn {
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .btn:hover {
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+        
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 20px;
+            z-index: 100;
+        }
+        
+        .spinner {
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 5px solid white;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .instructions {
+            position: fixed;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: black;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            z-index: 10;
+        }
+        
+        .upload-container {
+            position: fixed;
+            top: 70px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            z-index: 10;
+        }
+        
+        .upload-label {
+            display: inline-block;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .upload-label:hover {
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+        
+        #file-upload {
+            display: none;
+        }
+        
+        .file-name {
+            margin-left: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Loading 3D Model...</p>
+    </div>
+    
+    <div class="instructions">
+        Click and drag to rotate the model. Use buttons below to control the view.
+    </div>
+    
+    <div class="upload-container">
+        <label for="file-upload" class="upload-label">
+            Upload 3D Model (.glb)
+        </label>
+        <input type="file" id="file-upload" accept=".glb">
+        <span class="file-name" id="file-name"></span>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls">
+        <button class="btn" id="rotate">Auto-Rotate</button>
+        <button class="btn" id="scale">Scale Model</button>
+        <button class="btn" id="reset">Reset View</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+
+    <script>
+        // Global variables
+        let camera, scene, renderer;
+        let canvas, controls;
+        let model;
+        let isRotating = false;
+        let currentScale = 1.0;
+        
+        // Initialize the application
+        init();
+        
+        function init() {
+            // Get DOM elements
+            canvas = document.getElementById('canvas');
+            
+            // Setup Three.js scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff); // White background
+            
+            // Setup camera
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const aspectRatio = width / height;
+            camera = new THREE.PerspectiveCamera(75, aspectRatio, 0.1, 1000);
+            camera.position.z = 5;
+            
+            // Setup renderer
+            renderer = new THREE.WebGLRenderer({
+                canvas: canvas,
+                antialias: true
+            });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            
+            // Add orbit controls
+            try {
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.screenSpacePanning = false;
+                controls.minDistance = 2;
+                controls.maxDistance = 10;
+                console.log("OrbitControls initialized successfully");
+            } catch (e) {
+                console.error("OrbitControls failed to initialize:", e);
+                setupManualControls();
+            }
+            
+            // Add lights - Enhanced lighting setup
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(0, 1, 1);
+            scene.add(directionalLight);
+            
+            const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            backLight.position.set(0, 0, -1);
+            scene.add(backLight);
+            
+            // Add additional lights for better visibility
+            const leftLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            leftLight.position.set(-1, 0, 0);
+            scene.add(leftLight);
+            
+            const rightLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            rightLight.position.set(1, 0, 0);
+            scene.add(rightLight);
+            
+            const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            topLight.position.set(0, 1, 0);
+            scene.add(topLight);
+            
+            // Setup file upload handler
+            setupFileUpload();
+            
+            // Default to fallback heart if no file is uploaded initially
+            createFallbackHeart();
+            
+            // Setup event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('rotate').addEventListener('click', toggleRotation);
+            document.getElementById('scale').addEventListener('click', toggleScale);
+            document.getElementById('reset').addEventListener('click', resetModel);
+            
+            // Start animation loop
+            animate();
+        }
+        
+        function setupFileUpload() {
+            const fileInput = document.getElementById('file-upload');
+            const fileName = document.getElementById('file-name');
+            
+            fileInput.addEventListener('change', function(event) {
+                const file = event.target.files[0];
+                
+                if (file) {
+                    fileName.textContent = file.name;
+                    
+                    // Show loading screen
+                    document.getElementById('loading').style.display = 'flex';
+                    
+                    // Remove existing model if present
+                    if (model) {
+                        scene.remove(model);
+                    }
+                    
+                    // Create object URL for the file
+                    const objectURL = URL.createObjectURL(file);
+                    
+                    // Load the uploaded model
+                    loadModel(objectURL);
+                }
+            });
+        }
+        
+        function setupManualControls() {
+            // Manual rotation variables
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            
+            // Event listeners for manual controls
+            renderer.domElement.addEventListener('mousedown', function(e) {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+            
+            renderer.domElement.addEventListener('mousemove', function(e) {
+                if (isDragging && model) {
+                    const deltaMove = {
+                        x: e.clientX - previousMousePosition.x,
+                        y: e.clientY - previousMousePosition.y
+                    };
+                    
+                    model.rotation.y += deltaMove.x * 0.01;
+                    model.rotation.x += deltaMove.y * 0.01;
+                    
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
+                }
+            });
+            
+            renderer.domElement.addEventListener('mouseup', function() {
+                isDragging = false;
+            });
+            
+            // Add zoom with mouse wheel
+            renderer.domElement.addEventListener('wheel', function(e) {
+                e.preventDefault();
+                camera.position.z += e.deltaY * 0.005;
+                // Clamp camera position
+                camera.position.z = Math.max(2, Math.min(10, camera.position.z));
+            });
+        }
+        
+        function loadModel(url) {
+            // Check if GLTFLoader is available
+            if (typeof THREE.GLTFLoader === 'undefined') {
+                console.error('GLTFLoader not available. Using a placeholder cube instead.');
+                createFallbackHeart();
+                return;
+            }
+            
+            // Load the model
+            const loader = new THREE.GLTFLoader();
+            
+            loader.load(
+                url,
+                (gltf) => {
+                    model = gltf.scene;
+                    
+                    // Center the model
+                    const box = new THREE.Box3().setFromObject(model);
+                    const center = box.getCenter(new THREE.Vector3());
+                    model.position.x -= center.x;
+                    model.position.y -= center.y;
+                    model.position.z -= center.z;
+                    
+                    // Scale the model appropriately
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scale = 2 / maxDim;
+                    model.scale.set(scale, scale, scale);
+                    
+                    // Traverse all children to ensure materials are visible with white background
+                    model.traverse((child) => {
+                        if (child.isMesh && child.material) {
+                            // Increase material emissive to make it more visible
+                            if (!child.material.emissive) {
+                                child.material.emissive = new THREE.Color(0x222222);
+                            }
+                            // Ensure materials have proper settings for white background
+                            child.material.needsUpdate = true;
+                        }
+                    });
+                    
+                    scene.add(model);
+                    document.getElementById('loading').style.display = 'none';
+                    console.log('Model loaded successfully');
+                    
+                    // Reset view for new model
+                    resetModel();
+                },
+                (xhr) => {
+                    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+                    console.log(`Loading model: ${percent}%`);
+                },
+                (error) => {
+                    console.error('Error loading model:', error);
+                    alert('Error loading model. Using placeholder instead.');
+                    createFallbackHeart();
+                }
+            );
+        }
+        
+        function createFallbackHeart() {
+            console.warn('Using fallback heart geometry');
+            document.getElementById('loading').style.display = 'none';
+            
+            // Create a heart-like shape
+            const heartShape = new THREE.Shape();
+            
+            heartShape.moveTo(0, 0);
+            heartShape.bezierCurveTo(0, -0.5, -1, -1.5, -2, -0.5);
+            heartShape.bezierCurveTo(-3, 0.5, -2, 1.5, 0, 3);
+            heartShape.bezierCurveTo(2, 1.5, 3, 0.5, 2, -0.5);
+            heartShape.bezierCurveTo(1, -1.5, 0, -0.5, 0, 0);
+            
+            const extrudeSettings = {
+                depth: 1,
+                bevelEnabled: true,
+                bevelSegments: 2,
+                steps: 2,
+                bevelSize: 0.1,
+                bevelThickness: 0.1
+            };
+            
+            const geometry = new THREE.ExtrudeGeometry(heartShape, extrudeSettings);
+            // Use a darker red for better visibility on white background
+            const material = new THREE.MeshPhongMaterial({ 
+                color: 0xcc0000, 
+                emissive: 0x222222,
+                specular: 0x555555,
+                shininess: 30
+            });
+            model = new THREE.Mesh(geometry, material);
+            
+            // Center and scale the heart
+            model.scale.set(0.5, 0.5, 0.5);
+            model.rotation.x = Math.PI;
+            model.position.y = 0.5;
+            
+            scene.add(model);
+        }
+        
+        function onWindowResize() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            
+            renderer.setSize(width, height);
+        }
+        
+        function toggleRotation() {
+            isRotating = !isRotating;
+            document.getElementById('rotate').textContent = isRotating ? 'Stop Rotation' : 'Auto-Rotate';
+        }
+        
+        function toggleScale() {
+            currentScale = (currentScale === 1.0) ? 1.5 : (currentScale === 1.5) ? 0.5 : 1.0;
+            if (model) {
+                model.scale.set(
+                    model.scale.x * (currentScale / (currentScale === 1.5 ? 1.0 : (currentScale === 0.5 ? 1.5 : 0.5))),
+                    model.scale.y * (currentScale / (currentScale === 1.5 ? 1.0 : (currentScale === 0.5 ? 1.5 : 0.5))),
+                    model.scale.z * (currentScale / (currentScale === 1.5 ? 1.0 : (currentScale === 0.5 ? 1.5 : 0.5)))
+                );
+            }
+        }
+        
+        function resetModel() {
+            if (model) {
+                model.rotation.set(0, 0, 0);
+                
+                // Reset scale based on model's bounding box
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const scale = 2 / maxDim;
+                model.scale.set(scale, scale, scale);
+                
+                currentScale = 1.0;
+                isRotating = false;
+                document.getElementById('rotate').textContent = 'Auto-Rotate';
+                
+                if (controls) {
+                    controls.reset();
+                }
+                
+                camera.position.set(0, 0, 5);
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotate model if rotation is enabled
+            if (model && isRotating) {
+                model.rotation.y += 0.01;
+            }
+            
+            // Update controls if available
+            if (controls && typeof controls.update === 'function') {
+                controls.update();
+            }
+            
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
