@@ -235,7 +235,7 @@
             setupFileUpload();
             
             // Default to fallback heart if no file is uploaded initially
-            createFallbackHeart();
+            createFallbackText();
             
             // Setup event listeners
             window.addEventListener('resize', onWindowResize);
@@ -316,7 +316,7 @@
             // Check if GLTFLoader is available
             if (typeof THREE.GLTFLoader === 'undefined') {
                 console.error('GLTFLoader not available. Using a placeholder cube instead.');
-                createFallbackHeart();
+                createFallbackText()
                 return;
             }
             
@@ -367,50 +367,47 @@
                 (error) => {
                     console.error('Error loading model:', error);
                     alert('Error loading model. Using placeholder instead.');
-                    createFallbackHeart();
+                    createFallbackText()
                 }
             );
         }
         
-        function createFallbackHeart() {
-            console.warn('Using fallback heart geometry');
-            document.getElementById('loading').style.display = 'none';
-            
-            // Create a heart-like shape
-            const heartShape = new THREE.Shape();
-            
-            heartShape.moveTo(0, 0);
-            heartShape.bezierCurveTo(0, -0.5, -1, -1.5, -2, -0.5);
-            heartShape.bezierCurveTo(-3, 0.5, -2, 1.5, 0, 3);
-            heartShape.bezierCurveTo(2, 1.5, 3, 0.5, 2, -0.5);
-            heartShape.bezierCurveTo(1, -1.5, 0, -0.5, 0, 0);
-            
-            const extrudeSettings = {
-                depth: 1,
-                bevelEnabled: true,
-                bevelSegments: 2,
-                steps: 2,
-                bevelSize: 0.1,
-                bevelThickness: 0.1
-            };
-            
-            const geometry = new THREE.ExtrudeGeometry(heartShape, extrudeSettings);
-            // Use a darker red for better visibility on white background
-            const material = new THREE.MeshPhongMaterial({ 
-                color: 0xcc0000, 
-                emissive: 0x222222,
-                specular: 0x555555,
-                shininess: 30
-            });
-            model = new THREE.Mesh(geometry, material);
-            
-            // Center and scale the heart
-            model.scale.set(0.5, 0.5, 0.5);
-            model.rotation.x = Math.PI;
-            model.position.y = 0.5;
-            
-            scene.add(model);
-        }
+        function createFallbackText() {
+    console.warn('Using fallback 3D text');
+    document.getElementById('loading').style.display = 'none';
+
+    const loader = new THREE.FontLoader();
+    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function (font) {
+        const textGeometry = new THREE.TextGeometry('                HCI_PROJECT\n\nSubmitted - to  :  Dr.  Anjali Gautam', {
+            font: font,
+            size: 0.3,
+            height: 0.05,
+            curveSegments: 12,
+            bevelEnabled: true,
+            bevelThickness: 0.02,
+            bevelSize: 0.02,
+            bevelSegments: 3
+        });
+
+        const material = new THREE.MeshPhongMaterial({
+            color: 0x202020,
+            emissive: 0x072534,
+            shininess: 100
+        });
+
+        model = new THREE.Mesh(textGeometry, material);
+
+        // Center the geometry
+        textGeometry.computeBoundingBox();
+        const center = textGeometry.boundingBox.getCenter(new THREE.Vector3());
+        model.position.x = -center.x;
+        model.position.y = -center.y;
+        model.position.z = -center.z;
+
+        scene.add(model);
+    });
+}
+
         
         function onWindowResize() {
             const width = window.innerWidth;
